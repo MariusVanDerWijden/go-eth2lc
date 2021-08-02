@@ -1,174 +1,226 @@
 package core
 
 import (
+	"fmt"
+	"math/big"
+	"sort"
+
+	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/MariusVanDerWijden/eth2-lc/types"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/golang/go/src/sort"
+	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/shared/bls"
 )
 
-func processBlock(state *types.BeaconState, signedBlock types.BeaconBlock) {
-	/*
-	   def process_block(state: BeaconState, block: BeaconBlock) -> None:
-	       process_block_header(state, block)
-	       process_randao(state, block.body)
-	       process_eth1_data(state, block.body)
-	       process_operations(state, block.body)
-	*/
+func processBlock(state *types.BeaconState, block *types.BeaconBlock) error {
+	if err := processBlockHeader(state, block); err != nil {
+		return err
+	}
+
+	if err := processRanDAO(state, block.Body); err != nil {
+		return err
+	}
+	processETH1Data(state, block.Body)
+	return processOperations(state, block.Body)
 }
 
-func processBlockHeader(state *types.BeaconState, signedBlock types.BeaconBlock) {
-	/*
-			ef process_block_header(state: BeaconState, block: BeaconBlock) -> None:
-		    # Verify that the slots match
-		    assert block.slot == state.slot
-		    # Verify that the parent matches
-		    assert block.parent_root == hash_tree_root(state.latest_block_header)
-		    # Cache current block as the new latest block
-		    state.latest_block_header = BeaconBlockHeader(
-		        slot=block.slot,
-		        parent_root=block.parent_root,
-		        state_root=Bytes32(),  # Overwritten in the next process_slot call
-		        body_root=hash_tree_root(block.body),
-		    )
-
-		    # Verify proposer is not slashed
-		    proposer = state.validators[get_beacon_proposer_index(state)]
-		    assert not proposer.slashed
-	*/
+func processBlockHeader(state *types.BeaconState, block *types.BeaconBlock) error {
+	// Verify the slots
+	if block.Slot != state.Slot {
+		return fmt.Errorf("invalid slot: block %v, state %v", block.Slot, state.Slot)
+	}
+	// Verify matching parents
+	if state := hashTreeRootHeader(state.LatestBlockHeader); block.ParentRoot != state {
+		return fmt.Errorf("invalid parent root: block %v, state %v", block.ParentRoot, state)
+	}
+	// Cache current block as new latest block
+	state.LatestBlockHeader = &types.BeaconBlockHeader{
+		Slot:       block.Slot,
+		ParentRoot: block.ParentRoot,
+		StateRoot:  common.Hash{},
+		BodyRoot:   hashTreeRootBody(block.Body),
+	}
+	proposer, _ := state.CurrentProposer()
+	if proposer.Slashed {
+		return errors.Errorf("proposer %v was slashed", proposer.PubKey)
+	}
+	return nil
 }
 
-func processRanDAO() {
-	/*
-			def process_randao(state: BeaconState, body: BeaconBlockBody) -> None:
-		    epoch = get_current_epoch(state)
-		    # Verify RANDAO reveal
-		    proposer = state.validators[get_beacon_proposer_index(state)]
-		    signing_root = compute_signing_root(epoch, get_domain(state, DOMAIN_RANDAO))
-		    assert bls.Verify(proposer.pubkey, signing_root, body.randao_reveal)
-		    # Mix in RANDAO reveal
-		    mix = xor(get_randao_mix(state, epoch), hash(body.randao_reveal))
-		    state.randao_mixes[epoch % EPOCHS_PER_HISTORICAL_VECTOR] = mix
-	*/
+func processRanDAO(state *types.BeaconState, body *types.BeaconBlockBody) error {
+	epoch := state.Epoch()
+	// Verify RANDAO reveal
+	proposer, _ := state.CurrentProposer()
+	signingRoot := computeSigningRoot(epoch, getDomain(state, config.DOMAIN_RANDAO))
+	if ok, err := bls.VerifyMultipleSignatures([][]byte{body.RanDAOReveal.Marshal()}, [][32]byte{signingRoot}, []bls.PublicKey{proposer.PubKey}); err != nil {
+		return err
+	} else if !ok {
+		return errors.New("verify Randao reveal failed")
+	}
+	// Mix in RANDAO reveal
+	// TODO check which hash function they use here
+	hash := func([]byte) [32]byte { return [32]byte{} }
+	var mix [32]byte
+	s := state.RANDAOMix(epoch)
+	h := hash(body.RanDAOReveal.Marshal())
+	for i := 0; i < len(mix); i++ {
+		mix[i] = s[i] ^ h[i]
+	}
+	state.RanDAOMix[epoch%config.EPOCHS_PER_HISTORICAL_VECTOR] = mix
+	return nil
 }
 
-func processETH1Data() {
-	/*
-			def process_eth1_data(state: BeaconState, body: BeaconBlockBody) -> None:
-		    state.eth1_data_votes.append(body.eth1_data)
-		    if state.eth1_data_votes.count(body.eth1_data) * 2 > SLOTS_PER_ETH1_VOTING_PERIOD:
-		        state.eth1_data = body.eth1_data
-	*/
+func processETH1Data(state *types.BeaconState, body *types.BeaconBlockBody) {
+	state.ETH1DataVotes = append(state.ETH1DataVotes, body.ETH1Data)
+	// TODO check if this is actually length and why the docs says state.eth1_data_votes.count(body.eth1_data) * 2 > SLOTS_PER_ETH1_VOTING_PERIOD:
+	if len(state.ETH1DataVotes)*2 > config.SLOTS_PER_ETH1_VOTING_PERIOD {
+		state.ETH1Data = body.ETH1Data
+	}
 }
 
-func processOperations() {
-	/*
-			def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
-		    # Verify that outstanding deposits are processed up to the maximum number of deposits
-		    assert len(body.deposits) == min(MAX_DEPOSITS, state.eth1_data.deposit_count - state.eth1_deposit_index)
-
-		    for operations, function in (
-		        (body.proposer_slashings, process_proposer_slashing),
-		        (body.attester_slashings, process_attester_slashing),
-		        (body.attestations, process_attestation),
-		        (body.deposits, process_deposit),
-		        (body.voluntary_exits, process_voluntary_exit),
-		        # @process_shard_receipt_proofs
-		    ):
-		        for operation in operations:
-		            function(state, operation)
-	*/
+func processOperations(state *types.BeaconState, body *types.BeaconBlockBody) error {
+	min := state.ETH1Data.DepositCount - state.ETH1DepositIndex
+	if min > config.MAX_DEPOSITS {
+		min = config.MAX_DEPOSITS
+	}
+	if len(body.Deposits) != int(min) {
+		return errors.Errorf("invalid deposits processed: got %v want %v", len(body.Deposits), min)
+	}
+	operations := []func() error{
+		func() error { return processProposerSlashings(state, body.ProposerSlashings) },
+		func() error { return processAttesterSlashings(state, body.AttesterSlashings) },
+		func() error { return processAttestations(body.Attestations) },
+		func() error { return processDeposits(body.Deposits) },
+		func() error { return processVoluntaryExits(body.VoluntaryExits) },
+	}
+	for _, ops := range operations {
+		if err := ops(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func processProposerSlashing() {
-	/*
-			def process_proposer_slashing(state: BeaconState, proposer_slashing: ProposerSlashing) -> None:
-		    # Verify header slots match
-		    assert proposer_slashing.signed_header_1.message.slot == proposer_slashing.signed_header_2.message.slot
-		    # Verify the headers are different
-		    assert proposer_slashing.signed_header_1 != proposer_slashing.signed_header_2
-		    # Verify the proposer is slashable
-		    proposer = state.validators[proposer_slashing.proposer_index]
-		    assert is_slashable_validator(proposer, get_current_epoch(state))
-		    # Verify signatures
-		    for signed_header in (proposer_slashing.signed_header_1, proposer_slashing.signed_header_2):
-		        domain = get_domain(state, DOMAIN_BEACON_PROPOSER, compute_epoch_at_slot(signed_header.message.slot))
-		        signing_root = compute_signing_root(signed_header.message, domain)
-		        assert bls.Verify(proposer.pubkey, signing_root, signed_header.signature)
-
-		    slash_validator(state, proposer_slashing.proposer_index)
-	*/
+func processProposerSlashings(state *types.BeaconState, slashings []types.ProposerSlashing) error {
+	for _, slashing := range slashings {
+		if slashing.SignedHeader1.Message.Slot != slashing.SignedHeader2.Message.Slot {
+			return fmt.Errorf("invalid slashing slots: msg1 %v, msg2 %v", slashing.SignedHeader1.Message.Slot, slashing.SignedHeader2.Message.Slot)
+		}
+		if slashing.SignedHeader1 == slashing.SignedHeader2 {
+			return errors.New("invalid slashing: signed headers are equal")
+		}
+		proposer := state.Validators[slashing.ProposerIndex]
+		if !isSlashableValidator(proposer, state.Epoch()) {
+			return errors.New("invalid slashing: proposer not slashable")
+		}
+		// Verify signatures
+		verfiySigs := func(header *types.SignedBeaconBlockHeader) error {
+			domain := getDomain(state, config.DOMAIN_BEACON_PROPOSER)
+			signingRoot := computeSigningRootBlock(header.Message, domain)
+			if ok, err := bls.VerifyMultipleSignatures([][]byte{header.Signature.Marshal()}, [][32]byte{signingRoot}, []bls.PublicKey{proposer.PubKey}); err != nil {
+				return err
+			} else if !ok {
+				return errors.New("verify Randao reveal failed")
+			}
+			return nil
+		}
+		if err := verfiySigs(slashing.SignedHeader1); err != nil {
+			return err
+		}
+		if err := verfiySigs(slashing.SignedHeader2); err != nil {
+			return err
+		}
+		return SlashValidator(state, slashing.ProposerIndex, -1)
+	}
+	return nil
 }
 
-func isSlashableValidator() {
-	/*
-			ef is_slashable_validator(validator: Validator, epoch: Epoch) -> bool:
-		    """
-		    Check if ``validator`` is slashable.
-		    """
-		    return (not validator.slashed) and (validator.activation_epoch <= epoch < validator.withdrawable_epoch)
-	*/
+func isSlashableValidator(val *types.Validator, epoch types.Epoch) bool {
+	return !val.Slashed && (val.ActivationEpoch <= epoch && epoch < val.WithdrawalEpoch)
 }
 
-func SlashValidator() {
-	/*
-			def slash_validator(state: BeaconState,
-		                    slashed_index: ValidatorIndex,
-		                    whistleblower_index: ValidatorIndex=None) -> None:
-		    """
-		    Slash the validator with index ``slashed_index``.
-		    """
-		    epoch = get_current_epoch(state)
-		    initiate_validator_exit(state, slashed_index)
-		    validator = state.validators[slashed_index]
-		    validator.slashed = True
-		    validator.withdrawable_epoch = max(validator.withdrawable_epoch, Epoch(epoch + EPOCHS_PER_SLASHINGS_VECTOR))
-		    state.slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += validator.effective_balance
-		    decrease_balance(state, slashed_index, validator.effective_balance // MIN_SLASHING_PENALTY_QUOTIENT)
-
-		    # Apply proposer and whistleblower rewards
-		    proposer_index = get_beacon_proposer_index(state)
-		    if whistleblower_index is None:
-		        whistleblower_index = proposer_index
-		    whistleblower_reward = Gwei(validator.effective_balance // WHISTLEBLOWER_REWARD_QUOTIENT)
-		    proposer_reward = Gwei(whistleblower_reward // PROPOSER_REWARD_QUOTIENT)
-		    increase_balance(state, proposer_index, proposer_reward)
-		    increase_balance(state, whistleblower_index, whistleblower_reward - proposer_reward)
-	*/
+func SlashValidator(state *types.BeaconState, index, whistleblower int) error {
+	epoch := state.Epoch()
+	if err := initiateValidatorExit(state, index); err != nil {
+		return err
+	}
+	validator := state.Validators[index]
+	validator.Slashed = true
+	max := epoch + config.EPOCHS_PER_SLASHINGS_VECTOR
+	if validator.WithdrawalEpoch > max {
+		max = validator.WithdrawalEpoch
+	}
+	validator.WithdrawalEpoch = max
+	slashings := new(big.Int).Add(state.Slashings[epoch%config.EPOCHS_PER_SLASHINGS_VECTOR], validator.EffectiveBalance)
+	state.Slashings[epoch%config.EPOCHS_PER_SLASHINGS_VECTOR] = slashings
+	state.DecreaseBalance(index, new(big.Int).Div(validator.EffectiveBalance, big.NewInt(config.MIN_SLASHING_PENALTY_QUOTIENT)))
+	// Apply proposer and whistleblower rewards
+	_, proposerIndex := state.CurrentProposer()
+	if whistleblower < 0 {
+		whistleblower = proposerIndex
+	}
+	whistleblowerReward := new(big.Int).Div(validator.EffectiveBalance, big.NewInt(config.WHISTLEBLOWER_REWARD_QUOTIENT))
+	proposerReward := new(big.Int).Div(whistleblowerReward, big.NewInt(config.PROPOSER_REWARD_QUOTIENT))
+	state.IncreaseBalance(proposerIndex, proposerReward)
+	state.IncreaseBalance(whistleblower, new(big.Int).Sub(whistleblowerReward, proposerReward))
+	return nil
 }
 
-func processAttesterSlashing() {
-	/*
-			def process_attester_slashing(state: BeaconState, attester_slashing: AttesterSlashing) -> None:
-		    attestation_1 = attester_slashing.attestation_1
-		    attestation_2 = attester_slashing.attestation_2
-		    assert is_slashable_attestation_data(attestation_1.data, attestation_2.data)
-		    assert is_valid_indexed_attestation(state, attestation_1)
-		    assert is_valid_indexed_attestation(state, attestation_2)
-
-		    slashed_any = False
-		    indices = set(attestation_1.attesting_indices).intersection(attestation_2.attesting_indices)
-		    for index in sorted(indices):
-		        if is_slashable_validator(state.validators[index], get_current_epoch(state)):
-		            slash_validator(state, index)
-		            slashed_any = True
-		    assert slashed_any
-	*/
+func processAttesterSlashings(state *types.BeaconState, slashings []types.AttesterSlashing) error {
+	for _, slashing := range slashings {
+		att1 := slashing.Attestation1
+		att2 := slashing.Attestation2
+		if !isSlashableAttestationData(att1.Data, att2.Data) {
+			return errors.New("no slashable attestation")
+		}
+		if !isValidIndexedAttestation(state, att1) {
+			return errors.New("first attestation is not valid")
+		}
+		if !isValidIndexedAttestation(state, att2) {
+			return errors.New("second attestation is not valid")
+		}
+		slashedAny := false
+		indices := SetIntersection(att1.AttestingIndices, att2.AttestingIndices)
+		sort.Sort(indices)
+		for _, index := range indices {
+			if isSlashableValidator(state.Validators[index], state.Epoch()) {
+				if err := SlashValidator(state, index, -1); err != nil {
+					return err
+				}
+				slashedAny = true
+			}
+		}
+		if !slashedAny {
+			return errors.New("no validators slashed in slashing")
+		}
+	}
+	return nil
 }
 
-func isSlashableAttestationData() {
-	/*
-			ef is_slashable_attestation_data(data_1: AttestationData, data_2: AttestationData) -> bool:
-		    """
-		    Check if ``data_1`` and ``data_2`` are slashable according to Casper FFG rules.
-		    """
-		    return (
-		        # Double vote
-		        (data_1 != data_2 and data_1.target.epoch == data_2.target.epoch) or
-		        # Surround vote
-		        (data_1.source.epoch < data_2.source.epoch and data_2.target.epoch < data_1.target.epoch)
-		    )
-	*/
+func isSlashableAttestationData(att1, att2 *types.AttestationData) bool {
+	doubleVote := (att1 != att2 && att1.Target.Epoch == att2.Target.Epoch)
+	surroundVote := (att1.Source.Epoch < att2.Source.Epoch && att2.Target.Epoch < att1.Target.Epoch)
+	return doubleVote || surroundVote
 }
 
-func isValidIndexedAttestation() {
+func isValidIndexedAttestation(state *types.BeaconState, att *types.IndexedAttestation) bool {
+	indices := att.AttestingIndices
+	// Verify max number of indices
+	if len(indices) > config.MAX_VALIDATORS_PER_COMMITTEE {
+		return false
+	}
+	// Verify indices are sorted and unique
+	sorted := indices
+	sort.Sort(sorted)
+	for i := range indices {
+		if indices[i] != sorted[i] {
+			return false
+		}
+	}
+
+	// Verify aggregate signature
+
 	/*
 			def is_valid_indexed_attestation(state: BeaconState, indexed_attestation: IndexedAttestation) -> bool:
 		    """
@@ -188,9 +240,10 @@ func isValidIndexedAttestation() {
 		    signing_root = compute_signing_root(indexed_attestation.data, domain)
 		    return bls.FastAggregateVerify(pubkeys, signing_root, indexed_attestation.signature)
 	*/
+	return false
 }
 
-func processAttestation() {
+func processAttestations([]types.Attestation) error {
 	/*
 			def process_attestation(state: BeaconState, attestation: Attestation) -> None:
 		    data = attestation.data
@@ -219,9 +272,10 @@ func processAttestation() {
 		    # Verify signature
 		    assert is_valid_indexed_attestation(state, get_indexed_attestation(state, attestation))
 	*/
+	return nil
 }
 
-func processDeposit() {
+func processDeposits([]types.Deposit) error {
 	/*
 			def process_deposit(state: BeaconState, deposit: Deposit) -> None:
 		    # Verify the Merkle branch
@@ -267,9 +321,10 @@ func processDeposit() {
 		        index = ValidatorIndex(validator_pubkeys.index(pubkey))
 		        increase_balance(state, index, amount)
 	*/
+	return nil
 }
 
-func processVoluntaryExit() {
+func processVoluntaryExits([]types.VoluntaryExit) error {
 	/*
 			def process_voluntary_exit(state: BeaconState, signed_voluntary_exit: SignedVoluntaryExit) -> None:
 		    voluntary_exit = signed_voluntary_exit.message
@@ -289,4 +344,35 @@ func processVoluntaryExit() {
 		    # Initiate exit
 		    initiate_validator_exit(state, voluntary_exit.validator_index)
 	*/
+	return nil
+}
+
+func getDomain(state *types.BeaconState, domain int) types.Domain {
+	// TODO impl
+	return types.Domain(domain)
+}
+
+func getDomainAtEpoch(state *types.BeaconState, domain int, epoch types.Epoch) types.Domain {
+	// TODO impl
+	return types.Domain(domain)
+}
+
+func computeSigningRoot(epoch types.Epoch, domain types.Domain) common.Hash {
+	// TODO impl
+	return common.Hash{}
+}
+
+func computeSigningRootBlock(block types.BeaconBlock, domain types.Domain) common.Hash {
+	// TODO impl
+	return common.Hash{}
+}
+
+func initiateValidatorExit(state *types.BeaconState, index int) error {
+	// TODO impl
+	return nil
+}
+
+func SetIntersection(a, b []int) []int {
+	// TODO impl
+	return []int{}
 }

@@ -56,6 +56,14 @@ func verifyBlockSignature(state *types.BeaconState, signedBlock types.SignedBeac
 func hashTreeRoot(state *types.BeaconState) common.Hash {
 	return common.Hash{}
 }
-func hashTreeRootHeader(header types.BeaconBlockHeader) common.Hash {
+func hashTreeRootHeader(header *types.BeaconBlockHeader) common.Hash {
+	return common.Hash{}
+}
+
+func hashTreeHistoricalBatch(batch *types.HistoricalBatch) common.Hash {
+	return common.Hash{}
+}
+
+func hashTreeRootBody(header *types.BeaconBlockBody) common.Hash {
 	return common.Hash{}
 }

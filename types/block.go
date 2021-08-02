@@ -17,7 +17,7 @@ type BeaconBlock struct {
 	Slot       Slot
 	ParentRoot common.Hash
 	StateRoot  common.Hash
-	Body       BeaconBlockBody
+	Body       *BeaconBlockBody
 }
 
 type SignedBeaconBlock struct {

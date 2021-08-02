@@ -12,9 +12,25 @@ type Epoch uint64
 
 type BLSSignature bls.Signature
 type BLSPubKey bls.PublicKey
+type Domain uint64
 
-type ProposerSlashing []byte
-type AttesterSlashing []byte
+type ProposerSlashing struct {
+	ProposerIndex int
+	SignedHeader1 *SignedBeaconBlockHeader
+	SignedHeader2 *SignedBeaconBlockHeader
+}
+
+type AttesterSlashing struct {
+	Attestation1 *IndexedAttestation
+	Attestation2 *IndexedAttestation
+}
+
+type IndexedAttestation struct {
+	AttestingIndices []int
+	Data             *AttestationData
+	Signature        *BLSSignature
+}
+
 type Attestation []byte
 type Deposit []byte
 type VoluntaryExit []byte
@@ -42,6 +58,37 @@ type Validator struct {
 	WithdrawalEpoch            Epoch
 }
 
+func (v *Validator) IsActive(epoch Epoch) bool {
+	return true
+}
+
+type ValByEpochAndIndex []*Validator
+
+func (v ValByEpochAndIndex) Len() int { return len(v) }
+func (v ValByEpochAndIndex) Less(i, j int) bool {
+	// If the prices are equal, use the time the transaction was first seen for
+	// deterministic sorting
+	if v[i].ActivationEligibilityEpoch < v[j].ActivationEligibilityEpoch {
+		return false
+	} else if v[i].ActivationEligibilityEpoch > v[j].ActivationEligibilityEpoch {
+		return true
+	}
+	return !(i < j)
+}
+func (v ValByEpochAndIndex) Swap(i, j int) { v[i], v[j] = v[j], v[i] }
+
+func (v *ValByEpochAndIndex) Push(x interface{}) {
+	*v = append(*v, x.(*Validator))
+}
+
+func (v *ValByEpochAndIndex) Pop() interface{} {
+	old := *v
+	n := len(old)
+	x := old[n-1]
+	*v = old[0 : n-1]
+	return x
+}
+
 type PendingAttestation struct {
 	AggregationBits []byte
 	Data            AttestationData
@@ -60,4 +107,13 @@ type AttestationData struct {
 	BeaconBlockRoot common.Hash
 	Source          Checkpoint
 	Target          Checkpoint
+}
+
+type HistoricalBatch struct {
+	BlockRoots []common.Hash
+	StateRoots []common.Hash
+}
+
+func NewHistoricalBatch(blockRoots, stateRoots map[Slot]common.Hash) *HistoricalBatch {
+	return nil
 }

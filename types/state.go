@@ -12,14 +12,14 @@ type BeaconState struct {
 	GenesisTime                 uint64
 	Slot                        Slot
 	Fork                        Fork
-	LatestBlockHeader           BeaconBlockHeader
+	LatestBlockHeader           *BeaconBlockHeader
 	BlockRoots                  map[Slot]common.Hash
 	StateRoots                  map[Slot]common.Hash
 	HistoricalRoots             map[Slot]common.Hash
 	ETH1Data                    ETH1Data
 	ETH1DataVotes               []ETH1Data
 	ETH1DepositIndex            uint64
-	Validators                  []Validator
+	Validators                  []*Validator
 	Balances                    []*big.Int
 	RanDAOMix                   [][32]byte
 	Slashings                   map[Epoch]*big.Int
@@ -51,6 +51,18 @@ func (b *BeaconState) GetAttestingBalanceTimesThree(attesters []PendingAttestati
 	return big.NewInt(0)
 }
 
+func (b *BeaconState) TotalBalance(unslashedAttIndicies map[int]struct{}) *big.Int {
+	return big.NewInt(0)
+}
+
+func (b *BeaconState) BaseReward(index int) *big.Int {
+	return big.NewInt(0)
+}
+
+func (b *BeaconState) ValidatorChurnLimit() int {
+	return 0
+}
+
 func (b *BeaconState) Epoch() Epoch {
 	return Epoch(b.Slot / config.SLOTS_PER_EPOCH)
 }
@@ -60,4 +72,18 @@ func (b *BeaconState) PrevEpoch() Epoch {
 		return Epoch(epoch - 1)
 	}
 	return Epoch(config.GENESIS_EPOCH)
+}
+
+func (b *BeaconState) CurrentProposer() (*Validator, int) {
+	index := getBeaconProposerIndex(b)
+	return b.Validators[index], index
+}
+
+func getBeaconProposerIndex(state *BeaconState) int {
+	// TODO impl
+	return 0
+}
+
+func (b *BeaconState) RANDAOMix(epoch Epoch) [32]byte {
+	return [32]byte{}
 }
