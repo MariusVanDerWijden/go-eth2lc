@@ -5,17 +5,18 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/prysmaticlabs/prysm/shared/bls"
+	blscommon "github.com/prysmaticlabs/prysm/shared/bls/common"
 )
 
 type Slot uint64
 type Epoch uint64
 
-type BLSSignature bls.Signature
+type BLSSignature blscommon.Signature
 type BLSPubKey bls.PublicKey
 type Domain uint64
 
 type ProposerSlashing struct {
-	ProposerIndex int
+	ProposerIndex uint64
 	SignedHeader1 *SignedBeaconBlockHeader
 	SignedHeader2 *SignedBeaconBlockHeader
 }
@@ -28,12 +29,42 @@ type AttesterSlashing struct {
 type IndexedAttestation struct {
 	AttestingIndices []int
 	Data             *AttestationData
-	Signature        *BLSSignature
+	Signature        *blscommon.Signature
 }
 
-type Attestation []byte
-type Deposit []byte
-type VoluntaryExit []byte
+type Attestation struct {
+	AggregationBits []byte
+	Data            AttestationData
+	Signature       BLSSignature
+}
+
+type Deposit struct {
+	Data  DepositData
+	Proof []common.Hash
+}
+
+type DepositData struct {
+	Pubkey                BLSPubKey
+	WithdrawalCredentials [32]byte
+	Amount                *big.Int
+	Signature             BLSSignature
+}
+
+type DepositMessage struct {
+	Pubkey                BLSPubKey
+	WithdrawalCredentials [32]byte
+	Amount                *big.Int
+}
+
+type SignedVoluntaryExit struct {
+	Message   VoluntaryExit
+	Signature BLSSignature
+}
+
+type VoluntaryExit struct {
+	Epoch          Epoch
+	ValidatorIndex uint64
+}
 
 type ETH1Data struct {
 	DepositRoot  common.Hash

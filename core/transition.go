@@ -67,3 +67,7 @@ func hashTreeHistoricalBatch(batch *types.HistoricalBatch) common.Hash {
 func hashTreeRootBody(header *types.BeaconBlockBody) common.Hash {
 	return common.Hash{}
 }
+
+func hashTreeRootDepositData(data *types.DepositData) common.Hash {
+	return common.Hash{}
+}

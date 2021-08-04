@@ -31,9 +31,9 @@ type BeaconState struct {
 	FinalizedCheckpoint         Checkpoint
 }
 
-func (b *BeaconState) IncreaseBalance(index int, balance *big.Int) {}
+func (b *BeaconState) IncreaseBalance(index uint64, balance *big.Int) {}
 
-func (b *BeaconState) DecreaseBalance(index int, balance *big.Int) {}
+func (b *BeaconState) DecreaseBalance(index uint64, balance *big.Int) {}
 
 func (b *BeaconState) GetBlockRoot(epoch Epoch) common.Hash {
 	return common.Hash{}
@@ -74,16 +74,34 @@ func (b *BeaconState) PrevEpoch() Epoch {
 	return Epoch(config.GENESIS_EPOCH)
 }
 
-func (b *BeaconState) CurrentProposer() (*Validator, int) {
+func (b *BeaconState) CurrentProposer() (*Validator, uint64) {
 	index := getBeaconProposerIndex(b)
 	return b.Validators[index], index
 }
 
-func getBeaconProposerIndex(state *BeaconState) int {
+func getBeaconProposerIndex(state *BeaconState) uint64 {
 	// TODO impl
 	return 0
 }
 
 func (b *BeaconState) RANDAOMix(epoch Epoch) [32]byte {
 	return [32]byte{}
+}
+
+func (b *BeaconState) IndexedAttestation(att Attestation) *IndexedAttestation {
+	// TODO impl
+	return &IndexedAttestation{}
+}
+
+func (b *BeaconState) ValidatorPubkeys() map[BLSPubKey]uint64 {
+	pubKeys := make(map[BLSPubKey]uint64)
+	for index, val := range b.Validators {
+		pubKeys[val.PubKey] = uint64(index)
+	}
+	return pubKeys
+}
+
+func (b *BeaconState) AddValidator(val *Validator, amount *big.Int) {
+	b.Validators = append(b.Validators, val)
+	b.Balances = append(b.Balances, amount)
 }

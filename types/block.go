@@ -10,7 +10,7 @@ type BeaconBlockBody struct {
 	AttesterSlashings []AttesterSlashing
 	Attestations      []Attestation
 	Deposits          []Deposit
-	VoluntaryExits    []VoluntaryExit
+	VoluntaryExits    []SignedVoluntaryExit
 }
 
 type BeaconBlock struct {
