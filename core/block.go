@@ -1,14 +1,13 @@
 package core
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math/big"
-	"sort"
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/MariusVanDerWijden/eth2-lc/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/golang/go/src/sort"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/shared/bls"
 )
@@ -31,7 +30,7 @@ func processBlockHeader(state *types.BeaconState, block *types.BeaconBlock) erro
 		return fmt.Errorf("invalid slot: block %v, state %v", block.Slot, state.Slot)
 	}
 	// Verify matching parents
-	if state := hashTreeRootHeader(state.LatestBlockHeader); block.ParentRoot != state {
+	if state := hashTreeRoot(state.LatestBlockHeader); block.ParentRoot != state {
 		return fmt.Errorf("invalid parent root: block %v, state %v", block.ParentRoot, state)
 	}
 	// Cache current block as new latest block
@@ -39,7 +38,7 @@ func processBlockHeader(state *types.BeaconState, block *types.BeaconBlock) erro
 		Slot:       block.Slot,
 		ParentRoot: block.ParentRoot,
 		StateRoot:  common.Hash{},
-		BodyRoot:   hashTreeRootBody(block.Body),
+		BodyRoot:   hashTreeRoot(block.Body),
 	}
 	proposer, _ := state.CurrentProposer()
 	if proposer.Slashed {
@@ -60,10 +59,9 @@ func processRanDAO(state *types.BeaconState, body *types.BeaconBlockBody) error 
 	}
 	// Mix in RANDAO reveal
 	// TODO check which hash function they use here
-	hash := func([]byte) [32]byte { return [32]byte{} }
 	var mix [32]byte
 	s := state.RANDAOMix(epoch)
-	h := hash(body.RanDAOReveal.Marshal())
+	h := types.Hash(body.RanDAOReveal.Marshal())
 	for i := 0; i < len(mix); i++ {
 		mix[i] = s[i] ^ h[i]
 	}
@@ -117,7 +115,7 @@ func processProposerSlashings(state *types.BeaconState, slashings []types.Propos
 		// Verify signatures
 		verfiySigs := func(header *types.SignedBeaconBlockHeader) error {
 			domain := getDomain(state, config.DOMAIN_BEACON_PROPOSER)
-			signingRoot := computeSigningRootBlock(header.Message, domain)
+			signingRoot := computeSigningRoot(header.Message, domain)
 			if ok, err := bls.VerifyMultipleSignatures([][]byte{header.Signature.Marshal()}, [][32]byte{signingRoot}, []bls.PublicKey{proposer.PubKey}); err != nil {
 				return err
 			} else if !ok {
@@ -182,8 +180,8 @@ func processAttesterSlashings(state *types.BeaconState, slashings []types.Attest
 		}
 		slashedAny := false
 		indices := SetIntersection(att1.AttestingIndices, att2.AttestingIndices)
-		sort.Sort(indices)
-		for _, index := range indices {
+		sorted := Sort(indices)
+		for _, index := range sorted {
 			if isSlashableValidator(state.Validators[index], state.Epoch()) {
 				if err := SlashValidator(state, uint64(index), -1); err != nil {
 					return err
@@ -211,8 +209,7 @@ func isValidIndexedAttestation(state *types.BeaconState, att *types.IndexedAttes
 		return false
 	}
 	// Verify indices are sorted and unique
-	sorted := indices
-	sort.Sort(sorted)
+	sorted := Sort(indices)
 	for i := range indices {
 		if indices[i] != sorted[i] {
 			return false
@@ -224,7 +221,7 @@ func isValidIndexedAttestation(state *types.BeaconState, att *types.IndexedAttes
 		pubKeys = append(pubKeys, state.Validators[i].PubKey)
 	}
 	domain := getDomainAtEpoch(state, config.DOMAIN_BEACON_ATTESTER, att.Data.Target.Epoch)
-	signingRoot := computeSigningRootAttestationData(att.Data, domain)
+	signingRoot := computeSigningRoot(att.Data, domain)
 	_ = signingRoot
 	return true
 	// TODO verify aggregates signature
@@ -234,13 +231,13 @@ func isValidIndexedAttestation(state *types.BeaconState, att *types.IndexedAttes
 func processAttestations(state *types.BeaconState, atts []types.Attestation) error {
 	for _, att := range atts {
 		data := att.Data
-		if size := getCommitteCountAtSlot(state, data.Slot); data.Index >= size {
+		if size := getCommitteeCountPerSlot(state, data.Slot); data.Index >= size {
 			return fmt.Errorf("invalid attestation index: %v size %v", data.Index, size)
 		}
 		if data.Target.Epoch != state.PrevEpoch() && data.Target.Epoch != state.Epoch() {
 			return fmt.Errorf("invalid epoch in attestation: %v want %v or %v", data.Target.Epoch, state.PrevEpoch(), state.Epoch())
 		}
-		if epoch := computeEpochAtSlot(data.Slot); data.Target.Epoch != epoch {
+		if epoch := data.Slot.Epoch(); data.Target.Epoch != epoch {
 			return fmt.Errorf("invalid epoch in attestation: %v want %v", data.Target.Epoch, epoch)
 		}
 		if data.Slot+config.MIN_ATTESTATION_INCLUSION_DELAY > state.Slot {
@@ -304,7 +301,7 @@ func processDeposits(state *types.BeaconState, deposits []types.Deposit) error {
 				Amount:                deposit.Data.Amount,
 			}
 			domain := computeDomain(config.DOMAIN_DEPOSIT)
-			signingRoot := computeSigningRootDepositMessage(depositMessage, domain)
+			signingRoot := computeSigningRoot(depositMessage, domain)
 			if !Verify(pubkey, signingRoot, deposit.Data.Signature) {
 				// TODO check if a wrongly signed deposit is just ignored as done here
 				break
@@ -351,7 +348,7 @@ func processVoluntaryExits(state *types.BeaconState, exits []types.SignedVolunta
 			return fmt.Errorf("volExit, validator not active for long: needs %v", validator.ActivationEpoch+config.PERSISTENT_COMMITTEE_PERIOD)
 		}
 		domain := getDomainAtEpoch(state, config.DOMAIN_VOLUNTARY_EXIT, state.Epoch())
-		signingRoot := computeSigningRootVoluntaryExit(voluntaryExit, domain)
+		signingRoot := computeSigningRoot(voluntaryExit, domain)
 		if !Verify(validator.PubKey, signingRoot, exit.Signature) {
 			return errors.New("invalid signature on voluntary exit")
 		}
@@ -363,48 +360,98 @@ func processVoluntaryExits(state *types.BeaconState, exits []types.SignedVolunta
 }
 
 func getDomain(state *types.BeaconState, domain int) types.Domain {
-	// TODO impl
-	return types.Domain(domain)
+	return computeDomainFull(domain, config.GENESIS_FORK_VERSION, state.GenesisValidatorsRoot)
 }
 
 func getDomainAtEpoch(state *types.BeaconState, domain int, epoch types.Epoch) types.Domain {
-	// TODO impl
-	return types.Domain(domain)
+	forkVersion := state.Fork.CurrentVersion
+	if epoch < state.Fork.Epoch {
+		forkVersion = state.Fork.PreviousVersion
+	}
+	return computeDomainFull(domain, forkVersion, state.GenesisValidatorsRoot)
 }
 
 func computeDomain(domain int) types.Domain {
-	// TODO impl
-	return types.Domain(domain)
+	return computeDomainFull(domain, config.GENESIS_FORK_VERSION, common.Hash{})
 }
 
-func computeSigningRoot(epoch types.Epoch, domain types.Domain) common.Hash {
-	// TODO impl
-	return common.Hash{}
+func computeDomainFull(domainType int, forkVersion uint64, hash common.Hash) types.Domain {
+	forkDataRoot := computeForkDataRoot(forkVersion, hash)
+	var domain types.Domain
+	binary.BigEndian.PutUint32(domain[:], uint32(domainType))
+	copy(domain[4:], forkDataRoot.Bytes()[:28])
+	return domain
 }
 
-func computeSigningRootBlock(block types.BeaconBlock, domain types.Domain) common.Hash {
-	// TODO impl
-	return common.Hash{}
+func computeForkDataRoot(version uint64, genesisValidatorsRoot common.Hash) common.Hash {
+	return hashTreeRoot(types.ForkData{CurrentVersion: version, GenesisValidatorsRoot: genesisValidatorsRoot})
 }
 
-func computeSigningRootAttestationData(attData *types.AttestationData, domain types.Domain) common.Hash {
-	// TODO impl
-	return common.Hash{}
-}
-
-func computeSigningRootDepositMessage(msg types.DepositMessage, domain types.Domain) common.Hash {
-	// TODO impl
-	return common.Hash{}
-}
-
-func computeSigningRootVoluntaryExit(exit types.VoluntaryExit, domain types.Domain) common.Hash {
-	// TODO impl
-	return common.Hash{}
+func computeSigningRoot(ssz types.SSZSerializable, domain types.Domain) common.Hash {
+	data := types.SigningData{
+		ObjectRoot: hashTreeRoot(ssz),
+		Domain:     domain,
+	}
+	return hashTreeRoot(data)
 }
 
 func initiateValidatorExit(state *types.BeaconState, index uint64) error {
-	// TODO impl
+	valdiator := state.Validators[index]
+	if valdiator.ExitEpoch != config.FAR_FUTURE_EPOCH {
+		return nil
+	}
+
+	// Compute exit queue epoch
+	exitQueueEpoch := state.MaxExitEpoch()
+	if cpExitEpoch := computeActivationExitEpoch(state.Epoch()); cpExitEpoch > exitQueueEpoch {
+		exitQueueEpoch = cpExitEpoch
+	}
+
+	exitQueueChurn := state.ExitQueueChurn(exitQueueEpoch)
+	if exitQueueChurn >= state.ValidatorChurnLimit() {
+		exitQueueEpoch += 1
+	}
+
+	// Set validator exit epoch and withdrawable epoch
+	valdiator.ExitEpoch = exitQueueEpoch
+	valdiator.WithdrawalEpoch = valdiator.ExitEpoch + config.MIN_VALIDATOR_WITHDRAWABILITY_DELAY
 	return nil
+}
+
+func getCommitteeCountPerSlot(state *types.BeaconState, slot types.Slot) uint64 {
+	epoch := slot.Epoch()
+	min := len(state.GetActiveValidatorIndices(epoch)) / config.SLOTS_PER_EPOCH / config.TARGET_COMMITTEE_SIZE
+	if config.MAX_COMMITTEES_PER_SLOT < min {
+		min = config.MAX_COMMITTEES_PER_SLOT
+	}
+	if min < 1 {
+		min = 1
+	}
+	return uint64(min)
+}
+
+func computeActivationExitEpoch(epoch types.Epoch) types.Epoch {
+	return types.Epoch(epoch + 1 + config.MAX_SEED_LOOKAHEAD)
+}
+
+func getBeaconComittee(state *types.BeaconState, slot types.Slot, index uint64) []uint64 {
+	epoch := slot.Epoch()
+	committeesPerSlot := getCommitteeCountPerSlot(state, slot)
+	return computeComittee(
+		state.GetActiveValidatorIndices(epoch),
+		types.GetSeed(state, epoch, config.DOMAIN_BEACON_ATTESTER),
+		uint64(slot%config.SLOTS_PER_EPOCH)*committeesPerSlot+index,
+		committeesPerSlot*config.SLOTS_PER_EPOCH)
+}
+
+func computeComittee(indices []int, seed [32]byte, index, count uint64) []uint64 {
+	start := (uint64(len(indices)) * index) / count
+	end := (uint64(len(indices)) * (index + 1)) / count
+	comittee := make([]uint64, 0, count)
+	for i := start; i < end; i++ {
+		comittee = append(comittee, types.ComputeShuffledIndex(i, uint64(len(indices)), seed))
+	}
+	return comittee
 }
 
 func SetIntersection(a, b []int) []int {
@@ -412,14 +459,9 @@ func SetIntersection(a, b []int) []int {
 	return []int{}
 }
 
-func getCommitteCountAtSlot(state *types.BeaconState, slot types.Slot) uint64 {
+func Sort([]int) []int {
 	// TODO impl
-	return 0
-}
-
-func computeEpochAtSlot(slot types.Slot) types.Epoch {
-	// TODO impl
-	return 0
+	return []int{}
 }
 
 func isValidMerkleBranch(leaf common.Hash, proof []common.Hash, depth int, index uint64, root common.Hash) bool {
@@ -432,6 +474,7 @@ func Verify(pk types.BLSPubKey, msg common.Hash, sig types.BLSSignature) bool {
 	return false
 }
 
-func getBeaconComittee(state *types.BeaconState, slot types.Slot, index uint64) []uint64 {
-	return []uint64{}
+func hashTreeRoot(ssz types.SSZSerializable) common.Hash {
+	// TODO impl
+	return common.Hash{}
 }

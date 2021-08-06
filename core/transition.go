@@ -46,28 +46,11 @@ func processSlot(state *types.BeaconState) {
 	if (state.LatestBlockHeader.StateRoot == common.Hash{}) {
 		state.LatestBlockHeader.StateRoot = prevStateRoot
 	}
-	prevStateRoot = hashTreeRootHeader(state.LatestBlockHeader)
+	prevStateRoot = hashTreeRoot(state.LatestBlockHeader)
 	state.BlockRoots[state.Slot%config.SLOTS_PER_HISTORICAL_ROOT] = prevStateRoot
 }
 
 func verifyBlockSignature(state *types.BeaconState, signedBlock types.SignedBeaconBlock) error {
+	// TODO impl
 	return nil
-}
-func hashTreeRoot(state *types.BeaconState) common.Hash {
-	return common.Hash{}
-}
-func hashTreeRootHeader(header *types.BeaconBlockHeader) common.Hash {
-	return common.Hash{}
-}
-
-func hashTreeHistoricalBatch(batch *types.HistoricalBatch) common.Hash {
-	return common.Hash{}
-}
-
-func hashTreeRootBody(header *types.BeaconBlockBody) common.Hash {
-	return common.Hash{}
-}
-
-func hashTreeRootDepositData(data *types.DepositData) common.Hash {
-	return common.Hash{}
 }

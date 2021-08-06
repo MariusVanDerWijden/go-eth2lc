@@ -3,17 +3,42 @@ package types
 import (
 	"math/big"
 
+	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/prysmaticlabs/prysm/shared/bls"
 	blscommon "github.com/prysmaticlabs/prysm/shared/bls/common"
 )
 
 type Slot uint64
+
+func (s Slot) Epoch() Epoch {
+	return Epoch(s / config.SLOTS_PER_EPOCH)
+}
+
 type Epoch uint64
+
+func (e Epoch) StartSlot() Slot {
+	return Slot(e * config.SLOTS_PER_EPOCH)
+}
+
+func (e Epoch) Serialize() []byte {
+	// TODO impl
+	return []byte{}
+}
+
+type SigningData struct {
+	ObjectRoot common.Hash
+	Domain     Domain
+}
+
+func (s SigningData) Serialize() []byte {
+	// TODO impl
+	return []byte{}
+}
 
 type BLSSignature blscommon.Signature
 type BLSPubKey bls.PublicKey
-type Domain uint64
+type Domain [32]byte
 
 type ProposerSlashing struct {
 	ProposerIndex uint64
@@ -50,10 +75,20 @@ type DepositData struct {
 	Signature             BLSSignature
 }
 
+func (d DepositData) Serialize() []byte {
+	// TODO impl
+	return []byte{}
+}
+
 type DepositMessage struct {
 	Pubkey                BLSPubKey
 	WithdrawalCredentials [32]byte
 	Amount                *big.Int
+}
+
+func (d DepositMessage) Serialize() []byte {
+	// TODO impl
+	return []byte{}
 }
 
 type SignedVoluntaryExit struct {
@@ -66,6 +101,11 @@ type VoluntaryExit struct {
 	ValidatorIndex uint64
 }
 
+func (v VoluntaryExit) Serialize() []byte {
+	// TODO impl
+	return []byte{}
+}
+
 type ETH1Data struct {
 	DepositRoot  common.Hash
 	DepositCount uint64
@@ -75,7 +115,17 @@ type ETH1Data struct {
 type Fork struct {
 	PreviousVersion uint64
 	CurrentVersion  uint64
-	Epoch           uint64
+	Epoch           Epoch
+}
+
+type ForkData struct {
+	CurrentVersion        uint64
+	GenesisValidatorsRoot common.Hash
+}
+
+func (f ForkData) Serialize() []byte {
+	// TODO impl
+	return []byte{}
 }
 
 type Validator struct {
@@ -89,7 +139,7 @@ type Validator struct {
 	WithdrawalEpoch            Epoch
 }
 
-func (v *Validator) IsActive(epoch Epoch) bool {
+func (v Validator) IsActive(epoch Epoch) bool {
 	return true
 }
 
@@ -140,11 +190,22 @@ type AttestationData struct {
 	Target          Checkpoint
 }
 
+func (a AttestationData) Serialize() []byte {
+	// TODO impl
+	return []byte{}
+}
+
 type HistoricalBatch struct {
 	BlockRoots []common.Hash
 	StateRoots []common.Hash
 }
 
+func (h HistoricalBatch) Serialize() []byte {
+	// TODO impl
+	return []byte{}
+}
+
 func NewHistoricalBatch(blockRoots, stateRoots map[Slot]common.Hash) *HistoricalBatch {
+	// TODO impl
 	return nil
 }

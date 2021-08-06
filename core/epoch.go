@@ -32,19 +32,19 @@ func processJustificationFinalization(state *types.BeaconState) {
 	state.JustificationBits.Shift(1)
 	state.JustificationBits.SetBitAt(0, false)
 
-	matchTargetAttests := getMatchingTargetAttests(state, prevEpoch)
+	matchTargetAttests := state.MatchingTargetAttests(prevEpoch)
 	if state.GetAttestingBalanceTimesThree(matchTargetAttests).Cmp(state.TotalActiveBalanceTimesTwo()) > 0 {
 		state.CurrentJustifiedCheckpoint = types.Checkpoint{
 			Epoch: prevEpoch,
-			Root:  state.GetBlockRoot(prevEpoch),
+			Root:  state.BlockRoot(prevEpoch),
 		}
 		state.JustificationBits.SetBitAt(1, true)
 	}
-	matchTargetAttests = getMatchingTargetAttests(state, currentEpoch)
+	matchTargetAttests = state.MatchingTargetAttests(currentEpoch)
 	if state.GetAttestingBalanceTimesThree(matchTargetAttests).Cmp(state.TotalActiveBalanceTimesTwo()) > 0 {
 		state.CurrentJustifiedCheckpoint = types.Checkpoint{
 			Epoch: currentEpoch,
-			Root:  state.GetBlockRoot(currentEpoch),
+			Root:  state.BlockRoot(currentEpoch),
 		}
 		state.JustificationBits.SetBitAt(0, true)
 	}
@@ -74,8 +74,8 @@ func processRewardsPenalties(state *types.BeaconState) {
 	}
 	rewards, penalties := getAttestationDeltas(state)
 	for index := 0; index < len(state.Validators); index++ {
-		state.IncreaseBalance(index, rewards[index])
-		state.DecreaseBalance(index, penalties[index])
+		state.IncreaseBalance(uint64(index), rewards[index])
+		state.DecreaseBalance(uint64(index), penalties[index])
 	}
 }
 
@@ -90,12 +90,7 @@ func getAttestationDeltas(state *types.BeaconState) ([]*big.Int, []*big.Int) {
 			ellValidatorIndices = append(ellValidatorIndices, i)
 		}
 	}
-	matchSourceAtts := getMatchingSourceAttests(state, prevEpoch)
-	matchTargetAtts := getMatchingTargetAttests(state, prevEpoch)
-	matchHeadAtts := getMatchingHeadAttests(state, prevEpoch)
-
-	allAtts := append(matchSourceAtts, matchTargetAtts...)
-	allAtts = append(allAtts, matchHeadAtts...)
+	matchSourceAtts, matchTargetAtts, matchHeadAtts := state.MatchingAttests(prevEpoch)
 
 	// Micro-incentives for matching FFG source, FFG target, and head
 	for _, atts := range [][]types.PendingAttestation{matchSourceAtts, matchTargetAtts, matchHeadAtts} {
@@ -153,7 +148,7 @@ func processRegistryUpdates(state *types.BeaconState) {
 			val.ActivationEligibilityEpoch = state.Epoch() + 1
 		}
 		if val.IsActive(state.Epoch()) && val.EffectiveBalance.Cmp(big.NewInt(config.EJECTION_BALANCE)) <= 0 {
-			initiateValidatorExit(state, index)
+			initiateValidatorExit(state, uint64(index))
 		}
 	}
 	// Queue validators eligible for activation and not yet dequeued for activation
@@ -180,7 +175,7 @@ func processSlashings(state *types.BeaconState) {
 				sum = totalBalance
 			}
 			penaltyNumerator := new(big.Int).Div(validator.EffectiveBalance, new(big.Int).Mul(increment, sum))
-			state.DecreaseBalance(index, penaltyNumerator)
+			state.DecreaseBalance(uint64(index), penaltyNumerator)
 		}
 	}
 }
@@ -205,55 +200,38 @@ func processFinalUpdates(state *types.BeaconState) {
 	}
 	// Reset slashings
 	state.Slashings[nextEpoch%config.EPOCHS_PER_SLASHINGS_VECTOR] = big.NewInt(0)
-	state.RanDAOMix[nextEpoch%config.EPOCHS_PER_SLASHINGS_VECTOR] = getRandaoMix(state, epoch)
+	state.RanDAOMix[nextEpoch%config.EPOCHS_PER_SLASHINGS_VECTOR] = state.RANDAOMix(epoch)
 	// Set historical root accumulator
 	if nextEpoch%(config.SLOTS_PER_HISTORICAL_ROOT/config.SLOTS_PER_EPOCH) == 0 {
 		historicalBatch := types.NewHistoricalBatch(state.BlockRoots, state.StateRoots)
-		state.HistoricalRoots[types.Slot(len(state.HistoricalRoots)-1)] = hashTreeHistoricalBatch(historicalBatch)
+		state.HistoricalRoots[types.Slot(len(state.HistoricalRoots)-1)] = hashTreeRoot(historicalBatch)
 	}
 	// Rotate current/previous epoch attestations
 	state.PreviousEpochAttestations = state.CurrentEpochAttestations
 	state.CurrentEpochAttestations = make([]types.PendingAttestation, 0)
 }
 
-func getMatchingTargetAttests(beaconstate *types.BeaconState, epoch types.Epoch) []types.PendingAttestation {
-	// TODO impl
-	return []types.PendingAttestation{}
-}
-
-func getMatchingSourceAttests(beaconstate *types.BeaconState, epoch types.Epoch) []types.PendingAttestation {
-	// TODO impl
-	return []types.PendingAttestation{}
-}
-
-func getMatchingHeadAttests(beaconstate *types.BeaconState, epoch types.Epoch) []types.PendingAttestation {
-	// TODO impl
-	return []types.PendingAttestation{}
-}
-
 func getUnslashedAttIndices(beaconstate *types.BeaconState, atts []types.PendingAttestation) map[int]struct{} {
+	/*
+			output = set()  # type: Set[ValidatorIndex]
+		    for a in attestations:
+		        output = output.union(get_attesting_indices(state, a.data, a.aggregation_bits))
+		    return set(filter(lambda index: not state.validators[index].slashed, output))
+	*/
 	// TODO impl
 	return nil
 }
 
 func getAttestingIndices(beaconstate *types.BeaconState, data types.AttestationData, aggrBits []byte) map[int]struct{} {
 	// TODO impl
+	/*
+
+	   committee = get_beacon_committee(state, data.slot, data.index)
+	   return set(index for i, index in enumerate(committee) if bits[i])
+	*/
 	return nil
 }
 
 func isElegibleForActivationQueue(val *types.Validator) bool {
-	// TODO impl
-	return true
-}
-
-func initiateValidatorExit(beaconstate *types.BeaconState, index int) error {
-	return nil
-}
-
-func computeActivationExitEpoch(epoch types.Epoch) types.Epoch {
-	return types.Epoch(0)
-}
-
-func getRandaoMix(beaconstate *types.BeaconState, epoch types.Epoch) [32]byte {
-	return [32]byte{}
+	return val.ActivationEligibilityEpoch == config.FAR_FUTURE_EPOCH && val.EffectiveBalance.Cmp(big.NewInt(config.MAX_EFFECTIVE_BALANCE)) == 0
 }
