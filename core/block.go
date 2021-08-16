@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math/big"
@@ -8,6 +9,7 @@ import (
 	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/MariusVanDerWijden/eth2-lc/types"
 	"github.com/ethereum/go-ethereum/common"
+	ssz "github.com/ferranbt/fastssz"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/shared/bls"
 )
@@ -58,7 +60,6 @@ func processRanDAO(state *types.BeaconState, body *types.BeaconBlockBody) error 
 		return errors.New("verify Randao reveal failed")
 	}
 	// Mix in RANDAO reveal
-	// TODO check which hash function they use here
 	var mix [32]byte
 	s := state.RANDAOMix(epoch)
 	h := types.Hash(body.RanDAOReveal.Marshal())
@@ -129,7 +130,9 @@ func processProposerSlashings(state *types.BeaconState, slashings []types.Propos
 		if err := verfiySigs(slashing.SignedHeader2); err != nil {
 			return err
 		}
-		return SlashValidator(state, slashing.ProposerIndex, -1)
+		if err := SlashValidator(state, slashing.ProposerIndex, -1); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -344,8 +347,8 @@ func processVoluntaryExits(state *types.BeaconState, exits []types.SignedVolunta
 		if voluntaryExit.Epoch < state.Epoch() {
 			return fmt.Errorf("volExit not valid before epoch %v is %v", state.Epoch(), voluntaryExit.Epoch)
 		}
-		if validator.ActivationEpoch+config.PERSISTENT_COMMITTEE_PERIOD < state.Epoch() {
-			return fmt.Errorf("volExit, validator not active for long: needs %v", validator.ActivationEpoch+config.PERSISTENT_COMMITTEE_PERIOD)
+		if validator.ActivationEpoch+config.SHARD_COMMITTEE_PERIOD < state.Epoch() {
+			return fmt.Errorf("volExit, validator not active for long: needs %v", validator.ActivationEpoch+config.SHARD_COMMITTEE_PERIOD)
 		}
 		domain := getDomainAtEpoch(state, config.DOMAIN_VOLUNTARY_EXIT, state.Epoch())
 		signingRoot := computeSigningRoot(voluntaryExit, domain)
@@ -465,8 +468,15 @@ func Sort([]int) []int {
 }
 
 func isValidMerkleBranch(leaf common.Hash, proof []common.Hash, depth int, index uint64, root common.Hash) bool {
-	// TODO impl
-	return false
+	value := leaf
+	for i := 0; i < depth; i++ {
+		if (index/(1<<i))%2 == 0 {
+			value = types.Hash(append(proof[i][:], value[:]...))
+		} else {
+			value = types.Hash(append(value[:], proof[i][:]...))
+		}
+	}
+	return bytes.Equal(value[:], root[:])
 }
 
 func Verify(pk types.BLSPubKey, msg common.Hash, sig types.BLSSignature) bool {
@@ -474,7 +484,12 @@ func Verify(pk types.BLSPubKey, msg common.Hash, sig types.BLSSignature) bool {
 	return false
 }
 
-func hashTreeRoot(ssz types.SSZSerializable) common.Hash {
-	// TODO impl
-	return common.Hash{}
+func hashTreeRoot(sszt types.SSZSerializable) common.Hash {
+	hasher := ssz.NewHasher()
+	hasher.Append(sszt.Serialize())
+	res, err := hasher.HashRoot()
+	if err != nil {
+		panic(err)
+	}
+	return common.Hash(res)
 }

@@ -5,9 +5,12 @@ import (
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/ethereum/go-ethereum/common"
+	ssz "github.com/ferranbt/fastssz"
 	"github.com/prysmaticlabs/prysm/shared/bls"
 	blscommon "github.com/prysmaticlabs/prysm/shared/bls/common"
 )
+
+type HashT common.Hash
 
 type Slot uint64
 
@@ -22,12 +25,11 @@ func (e Epoch) StartSlot() Slot {
 }
 
 func (e Epoch) Serialize() []byte {
-	// TODO impl
-	return []byte{}
+	return ssz.MarshalUint64([]byte{}, uint64(e))
 }
 
 type SigningData struct {
-	ObjectRoot common.Hash
+	ObjectRoot HashT
 	Domain     Domain
 }
 
@@ -110,6 +112,11 @@ type ETH1Data struct {
 	DepositRoot  common.Hash
 	DepositCount uint64
 	BlockHash    common.Hash
+}
+
+func (e ETH1Data) Serialize() []byte {
+	// TODO impl
+	return []byte{}
 }
 
 type Fork struct {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
@@ -51,6 +52,10 @@ func processSlot(state *types.BeaconState) {
 }
 
 func verifyBlockSignature(state *types.BeaconState, signedBlock types.SignedBeaconBlock) error {
-	// TODO impl
+	proposer := state.Validators[signedBlock.Message.ProposerIndex]
+	signingRoot := computeSigningRoot(signedBlock.Message, getDomain(state, config.DOMAIN_BEACON_PROPOSER))
+	if !Verify(proposer.PubKey, signingRoot, signedBlock.Signature) {
+		return errors.New("invalid block signature")
+	}
 	return nil
 }

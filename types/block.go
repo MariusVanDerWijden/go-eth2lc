@@ -18,16 +18,12 @@ type BeaconBlockBody struct {
 	VoluntaryExits    []SignedVoluntaryExit
 }
 
-func (b BeaconBlockBody) Serialize() []byte {
-	// TODO impl
-	return []byte{}
-}
-
 type BeaconBlock struct {
-	Slot       Slot
-	ParentRoot common.Hash
-	StateRoot  common.Hash
-	Body       *BeaconBlockBody
+	Slot          Slot
+	ParentRoot    common.Hash
+	StateRoot     common.Hash
+	Body          *BeaconBlockBody
+	ProposerIndex uint64
 }
 
 func (b BeaconBlock) Serialize() []byte {
@@ -45,11 +41,6 @@ type BeaconBlockHeader struct {
 	ParentRoot common.Hash
 	StateRoot  common.Hash
 	BodyRoot   common.Hash
-}
-
-func (b BeaconBlockHeader) Serialize() []byte {
-	// TODO impl
-	return []byte{}
 }
 
 type SignedBeaconBlockHeader struct {
