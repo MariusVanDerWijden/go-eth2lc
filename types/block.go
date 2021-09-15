@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 type BeaconBlockBody struct {
@@ -20,8 +19,8 @@ type BeaconBlockBody struct {
 
 type BeaconBlock struct {
 	Slot          Slot
-	ParentRoot    common.Hash
-	StateRoot     common.Hash
+	ParentRoot    Hash
+	StateRoot     Hash
 	Body          *BeaconBlockBody
 	ProposerIndex uint64
 }
@@ -38,9 +37,9 @@ type SignedBeaconBlock struct {
 
 type BeaconBlockHeader struct {
 	Slot       Slot
-	ParentRoot common.Hash
-	StateRoot  common.Hash
-	BodyRoot   common.Hash
+	ParentRoot Hash
+	StateRoot  Hash
+	BodyRoot   Hash
 }
 
 type SignedBeaconBlockHeader struct {
@@ -55,7 +54,7 @@ func GetSeed(state *BeaconState, epoch Epoch, domain uint64) [32]byte {
 	binary.BigEndian.PutUint64(msg, domain)
 	binary.BigEndian.PutUint64(msg[8:], uint64(epoch))
 	copy(msg[16:], mix[:])
-	return Hash(msg)
+	return HashFn(msg)
 }
 
-func Hash([]byte) [32]byte { return [32]byte{} }
+func HashFn([]byte) [32]byte { return [32]byte{} }

@@ -6,7 +6,6 @@ import (
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/MariusVanDerWijden/eth2-lc/types"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 func StateTransition(state *types.BeaconState, signedBlock types.SignedBeaconBlock, validate bool) (*types.BeaconState, error) {
@@ -44,7 +43,7 @@ func processSlots(state *types.BeaconState, slot types.Slot) error {
 func processSlot(state *types.BeaconState) {
 	prevStateRoot := hashTreeRoot(state)
 	state.StateRoots[state.Slot%config.SLOTS_PER_HISTORICAL_ROOT] = prevStateRoot
-	if (state.LatestBlockHeader.StateRoot == common.Hash{}) {
+	if (state.LatestBlockHeader.StateRoot == types.Hash{}) {
 		state.LatestBlockHeader.StateRoot = prevStateRoot
 	}
 	prevStateRoot = hashTreeRoot(state.LatestBlockHeader)

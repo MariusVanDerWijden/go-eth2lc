@@ -4,13 +4,13 @@ import (
 	"math/big"
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
-	"github.com/ethereum/go-ethereum/common"
 	ssz "github.com/ferranbt/fastssz"
-	"github.com/prysmaticlabs/prysm/shared/bls"
 	blscommon "github.com/prysmaticlabs/prysm/shared/bls/common"
 )
 
-type HashT common.Hash
+//go:generate go run ~/ethereum/fastssz/sszgen/*.go --path ./types/types.go --include ~/go/src/github.com/ethereum/go-ethereum/common
+
+type Hash [32]byte
 
 type Slot uint64
 
@@ -29,17 +29,12 @@ func (e Epoch) Serialize() []byte {
 }
 
 type SigningData struct {
-	ObjectRoot HashT
+	ObjectRoot Hash
 	Domain     Domain
 }
 
-func (s SigningData) Serialize() []byte {
-	// TODO impl
-	return []byte{}
-}
-
-type BLSSignature blscommon.Signature
-type BLSPubKey bls.PublicKey
+type BLSSignature [96]byte //blscommon.Signature
+type BLSPubKey [48]byte    //bls.PublicKey
 type Domain [32]byte
 
 type ProposerSlashing struct {
@@ -67,7 +62,7 @@ type Attestation struct {
 
 type Deposit struct {
 	Data  DepositData
-	Proof []common.Hash
+	Proof []Hash
 }
 
 type DepositData struct {
@@ -109,9 +104,9 @@ func (v VoluntaryExit) Serialize() []byte {
 }
 
 type ETH1Data struct {
-	DepositRoot  common.Hash
+	DepositRoot  Hash
 	DepositCount uint64
-	BlockHash    common.Hash
+	BlockHash    Hash
 }
 
 func (e ETH1Data) Serialize() []byte {
@@ -127,7 +122,7 @@ type Fork struct {
 
 type ForkData struct {
 	CurrentVersion        uint64
-	GenesisValidatorsRoot common.Hash
+	GenesisValidatorsRoot Hash
 }
 
 func (f ForkData) Serialize() []byte {
@@ -186,13 +181,13 @@ type PendingAttestation struct {
 
 type Checkpoint struct {
 	Epoch Epoch
-	Root  common.Hash
+	Root  Hash
 }
 
 type AttestationData struct {
 	Slot            Slot
 	Index           uint64
-	BeaconBlockRoot common.Hash
+	BeaconBlockRoot Hash
 	Source          Checkpoint
 	Target          Checkpoint
 }
@@ -203,8 +198,8 @@ func (a AttestationData) Serialize() []byte {
 }
 
 type HistoricalBatch struct {
-	BlockRoots []common.Hash
-	StateRoots []common.Hash
+	BlockRoots []Hash
+	StateRoots []Hash
 }
 
 func (h HistoricalBatch) Serialize() []byte {
@@ -212,7 +207,7 @@ func (h HistoricalBatch) Serialize() []byte {
 	return []byte{}
 }
 
-func NewHistoricalBatch(blockRoots, stateRoots map[Slot]common.Hash) *HistoricalBatch {
+func NewHistoricalBatch(blockRoots, stateRoots map[Slot]Hash) *HistoricalBatch {
 	// TODO impl
 	return nil
 }

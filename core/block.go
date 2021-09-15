@@ -8,7 +8,6 @@ import (
 
 	"github.com/MariusVanDerWijden/eth2-lc/config"
 	"github.com/MariusVanDerWijden/eth2-lc/types"
-	"github.com/ethereum/go-ethereum/common"
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/shared/bls"
@@ -39,7 +38,7 @@ func processBlockHeader(state *types.BeaconState, block *types.BeaconBlock) erro
 	state.LatestBlockHeader = &types.BeaconBlockHeader{
 		Slot:       block.Slot,
 		ParentRoot: block.ParentRoot,
-		StateRoot:  common.Hash{},
+		StateRoot:  types.Hash{},
 		BodyRoot:   hashTreeRoot(block.Body),
 	}
 	proposer, _ := state.CurrentProposer()
@@ -62,7 +61,7 @@ func processRanDAO(state *types.BeaconState, body *types.BeaconBlockBody) error 
 	// Mix in RANDAO reveal
 	var mix [32]byte
 	s := state.RANDAOMix(epoch)
-	h := types.Hash(body.RanDAOReveal.Marshal())
+	h := types.HashFn(body.RanDAOReveal.Marshal())
 	for i := 0; i < len(mix); i++ {
 		mix[i] = s[i] ^ h[i]
 	}
@@ -375,22 +374,22 @@ func getDomainAtEpoch(state *types.BeaconState, domain int, epoch types.Epoch) t
 }
 
 func computeDomain(domain int) types.Domain {
-	return computeDomainFull(domain, config.GENESIS_FORK_VERSION, common.Hash{})
+	return computeDomainFull(domain, config.GENESIS_FORK_VERSION, types.Hash{})
 }
 
-func computeDomainFull(domainType int, forkVersion uint64, hash common.Hash) types.Domain {
+func computeDomainFull(domainType int, forkVersion uint64, hash types.Hash) types.Domain {
 	forkDataRoot := computeForkDataRoot(forkVersion, hash)
 	var domain types.Domain
 	binary.BigEndian.PutUint32(domain[:], uint32(domainType))
-	copy(domain[4:], forkDataRoot.Bytes()[:28])
+	copy(domain[4:], forkDataRoot[:28])
 	return domain
 }
 
-func computeForkDataRoot(version uint64, genesisValidatorsRoot common.Hash) common.Hash {
+func computeForkDataRoot(version uint64, genesisValidatorsRoot types.Hash) types.Hash {
 	return hashTreeRoot(types.ForkData{CurrentVersion: version, GenesisValidatorsRoot: genesisValidatorsRoot})
 }
 
-func computeSigningRoot(ssz types.SSZSerializable, domain types.Domain) common.Hash {
+func computeSigningRoot(ssz types.SSZSerializable, domain types.Domain) types.Hash {
 	data := types.SigningData{
 		ObjectRoot: hashTreeRoot(ssz),
 		Domain:     domain,
@@ -467,29 +466,29 @@ func Sort([]int) []int {
 	return []int{}
 }
 
-func isValidMerkleBranch(leaf common.Hash, proof []common.Hash, depth int, index uint64, root common.Hash) bool {
+func isValidMerkleBranch(leaf types.Hash, proof []types.Hash, depth int, index uint64, root types.Hash) bool {
 	value := leaf
 	for i := 0; i < depth; i++ {
 		if (index/(1<<i))%2 == 0 {
-			value = types.Hash(append(proof[i][:], value[:]...))
+			value = types.HashFn(append(proof[i][:], value[:]...))
 		} else {
-			value = types.Hash(append(value[:], proof[i][:]...))
+			value = types.HashFn(append(value[:], proof[i][:]...))
 		}
 	}
 	return bytes.Equal(value[:], root[:])
 }
 
-func Verify(pk types.BLSPubKey, msg common.Hash, sig types.BLSSignature) bool {
+func Verify(pk types.BLSPubKey, msg types.Hash, sig types.BLSSignature) bool {
 	// TODO impl
 	return false
 }
 
-func hashTreeRoot(sszt types.SSZSerializable) common.Hash {
+func hashTreeRoot(sszt types.SSZSerializable) types.Hash {
 	hasher := ssz.NewHasher()
 	hasher.Append(sszt.Serialize())
 	res, err := hasher.HashRoot()
 	if err != nil {
 		panic(err)
 	}
-	return common.Hash(res)
+	return types.Hash(res)
 }

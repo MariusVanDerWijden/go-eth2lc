@@ -12,13 +12,13 @@ import (
 
 type BeaconState struct {
 	GenesisTime                 uint64
-	GenesisValidatorsRoot       common.Hash
+	GenesisValidatorsRoot       Hash
 	Slot                        Slot
 	Fork                        Fork
 	LatestBlockHeader           *BeaconBlockHeader
-	BlockRoots                  map[Slot]common.Hash
-	StateRoots                  map[Slot]common.Hash
-	HistoricalRoots             map[Slot]common.Hash
+	BlockRoots                  map[Slot]Hash
+	StateRoots                  map[Slot]Hash
+	HistoricalRoots             map[Slot]Hash
 	ETH1Data                    ETH1Data
 	ETH1DataVotes               []ETH1Data
 	ETH1DepositIndex            uint64
@@ -50,11 +50,11 @@ func (b *BeaconState) DecreaseBalance(index uint64, balance *big.Int) {
 	}
 }
 
-func (b *BeaconState) BlockRoot(epoch Epoch) common.Hash {
+func (b *BeaconState) BlockRoot(epoch Epoch) Hash {
 	return b.BlockRootBySlot(epoch.StartSlot())
 }
 
-func (b *BeaconState) BlockRootBySlot(slot Slot) common.Hash {
+func (b *BeaconState) BlockRootBySlot(slot Slot) Hash {
 	if slot >= b.Slot || b.Slot > slot+config.SLOTS_PER_HISTORICAL_ROOT {
 		panic("invalid slots in block root per slot")
 	}
@@ -131,7 +131,7 @@ func (b *BeaconState) getBeaconProposerIndex() uint64 {
 	s2 := GetSeed(b, epoch, config.DOMAIN_BEACON_PROPOSER)
 	copy(s, s2[:])
 	binary.BigEndian.PutUint64(s[32:], uint64(b.Slot))
-	seed := Hash(s)
+	seed := HashFn(s)
 	indices := b.GetActiveValidatorIndices(epoch)
 	return computeProposerIndex(b, indices, seed)
 }
@@ -237,7 +237,7 @@ func computeProposerIndex(state *BeaconState, indices []int, seed [32]byte) uint
 		candidateIndex := indices[ComputeShuffledIndex(i%total, total, seed)]
 		b := make([]byte, 8)
 		binary.BigEndian.PutUint64(b, uint64(i/32))
-		randomByte := Hash(append(seed[:], b...))[i%32]
+		randomByte := HashFn(append(seed[:], b...))[i%32]
 		effBal := new(big.Int).Mul(state.Validators[candidateIndex].EffectiveBalance, big.NewInt(int64(MAX_RANDOM_BYTE)))
 		if effBal.Cmp(new(big.Int).Mul(big.NewInt(config.MAX_EFFECTIVE_BALANCE), big.NewInt(int64(randomByte)))) >= 0 {
 			return uint64(candidateIndex)
@@ -255,7 +255,7 @@ func ComputeShuffledIndex(index, indexCount uint64, seed [32]byte) uint64 {
 	// See the 'generalized domain' algorithm on page 3
 	for currentRound := 0; currentRound < config.SHUFFLE_ROUND_COUNT; currentRound++ {
 		s := append(seed[:], byte(uint8(currentRound)))
-		h := Hash(s)
+		h := HashFn(s)
 		pivot := binary.BigEndian.Uint64(h[:]) % indexCount
 		flip := (pivot + indexCount - index) % indexCount
 		position := flip
@@ -266,7 +266,7 @@ func ComputeShuffledIndex(index, indexCount uint64, seed [32]byte) uint64 {
 		pBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(pBytes, p)
 		s2 := append(s, pBytes...)
-		source := Hash(s2)
+		source := HashFn(s2)
 		by := source[(position%256)/8]
 		bit := (by >> byte(position) % 8) % 2
 		if bit != 0 {
