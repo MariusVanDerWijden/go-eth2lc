@@ -483,6 +483,11 @@ func Verify(pk types.BLSPubKey, msg types.Hash, sig types.BLSSignature) bool {
 	return false
 }
 
+func VerifyMultiple(pk []types.BLSPubKey, msg types.Hash, sig types.BLSSignature) bool {
+	// TODO impl
+	return false
+}
+
 func hashTreeRoot(sszt types.SSZSerializable) types.Hash {
 	hasher := ssz.NewHasher()
 	hasher.Append(sszt.Serialize())

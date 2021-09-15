@@ -12,10 +12,10 @@ type LightClientUpdate struct {
 	Header BeaconBlockHeader
 	// Next sync committee
 	NextSyncCommittee       SyncCommittee
-	NextSyncCommitteeBranch [][32]byte
+	NextSyncCommitteeBranch []Hash
 	// Finality proof
 	FinalityHeader BeaconBlockHeader
-	FinalityBranch [][32]byte
+	FinalityBranch []Hash
 	// sync committee aggregate signature
 	SyncCommitteeBits      bitfield.Bitvector512
 	SyncCommitteeSignature BLSSignature
